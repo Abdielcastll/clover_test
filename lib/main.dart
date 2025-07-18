@@ -9,85 +9,261 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Clover Test App',
+      title: 'Clover POS',
       theme: ThemeData(
         primarySwatch: Colors.blue,
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
-      home: const CloverTestPage(),
+      home: const CloverPOSPage(),
       debugShowCheckedModeBanner: false,
     );
   }
 }
 
-class CloverTestPage extends StatefulWidget {
-  const CloverTestPage({super.key});
+class CloverPOSPage extends StatefulWidget {
+  const CloverPOSPage({super.key});
 
   @override
-  State<CloverTestPage> createState() => _CloverTestPageState();
+  State<CloverPOSPage> createState() => _CloverPOSPageState();
 }
 
-class _CloverTestPageState extends State<CloverTestPage> {
+class _CloverPOSPageState extends State<CloverPOSPage> {
   final _amountController = TextEditingController(text: '1000');
-  String _paymentStatus = '';
+  String _statusMessage = '';
   bool _isConnected = false;
-  bool _isProcessing = false;
+  bool _isLoading = false;
+  List<dynamic> _inventoryItems = [];
+  Map<String, dynamic>? _selectedItem;
 
   @override
   void dispose() {
     _amountController.dispose();
-    CloverService.disconnect(); // Limpieza al salir
+    CloverService.disconnect();
     super.dispose();
+  }
+
+  Future<void> _initializeClover() async {
+    setState(() {
+      _isLoading = true;
+      _statusMessage = 'Conectando con Clover...';
+    });
+
+    try {
+      final success = await CloverService.initialize();
+      setState(() {
+        _isConnected = success;
+        _statusMessage = success
+            ? '✅ Conexión exitosa con Clover'
+            : '❌ Error al conectar con Clover';
+      });
+
+      if (success) {
+        await _loadInventory();
+      }
+    } catch (e) {
+      setState(() {
+        _statusMessage = '❌ Error: ${e.toString()}';
+      });
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _loadInventory() async {
+    setState(() {
+      _isLoading = true;
+      _statusMessage = 'Cargando inventario...';
+    });
+
+    try {
+      final items = await CloverService.getInventoryItems();
+      setState(() {
+        _inventoryItems = items;
+        _statusMessage = '✅ Inventario cargado (${items.length} items)';
+      });
+    } catch (e) {
+      setState(() {
+        _statusMessage = '❌ Error al cargar inventario: ${e.toString()}';
+      });
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _selectItem(String itemId) async {
+    setState(() {
+      _isLoading = true;
+      _statusMessage = 'Obteniendo detalles del producto...';
+    });
+
+    try {
+      final item = await CloverService.getItemDetails(itemId);
+      setState(() {
+        _selectedItem = item;
+        if (item != null) {
+          _amountController.text = (item['price'] ?? 0).toString();
+          _statusMessage = '✅ Producto seleccionado: ${item['name']}';
+        } else {
+          _statusMessage = '⚠️ Producto no encontrado';
+        }
+      });
+    } catch (e) {
+      setState(() {
+        _statusMessage = '❌ Error al obtener producto: ${e.toString()}';
+      });
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _processPayment() async {
+    final amount = int.tryParse(_amountController.text) ?? 0;
+    if (amount <= 0) {
+      setState(() => _statusMessage = '⚠️ Ingrese un monto válido');
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _statusMessage =
+          'Procesando pago de \$${(amount / 100).toStringAsFixed(2)}...';
+    });
+
+    try {
+      final result = await CloverService.makePayment(amount);
+      setState(() => _statusMessage = result);
+    } catch (e) {
+      setState(() => _statusMessage = '❌ Error en el pago: ${e.toString()}');
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _disconnectClover() async {
+    setState(() {
+      _isLoading = true;
+      _statusMessage = 'Desconectando de Clover...';
+    });
+
+    try {
+      final success = await CloverService.disconnect();
+      setState(() {
+        _isConnected = !success;
+        _statusMessage =
+            success ? '✅ Desconexión exitosa' : '❌ Error al desconectar';
+        _inventoryItems = [];
+        _selectedItem = null;
+      });
+    } catch (e) {
+      setState(() {
+        _statusMessage = '❌ Error: ${e.toString()}';
+      });
+    } finally {
+      setState(() => _isLoading = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Clover SDK Test'),
-        centerTitle: true,
+        title: const Text('Clover POS'),
+        actions: [
+          if (_isConnected)
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: _loadInventory,
+              tooltip: 'Actualizar inventario',
+            ),
+        ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildStatusCard(),
-            const SizedBox(height: 30),
-            _buildPaymentForm(),
-            const SizedBox(height: 30),
-            _buildActionButtons(),
-            const SizedBox(height: 30),
-            _buildLogOutput(),
-          ],
-        ),
+      body: Column(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  _buildConnectionStatus(),
+                  const SizedBox(height: 20),
+                  if (_isConnected) _buildInventorySection(),
+                  const SizedBox(height: 20),
+                  _buildPaymentSection(),
+                ],
+              ),
+            ),
+          ),
+          _buildStatusBar(),
+        ],
       ),
     );
   }
 
-  Widget _buildStatusCard() {
+  Widget _buildConnectionStatus() {
     return Card(
-      elevation: 4,
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
+        padding: const EdgeInsets.all(16),
+        child: Row(
           children: [
-            const Icon(Icons.payment, size: 50, color: Colors.blue),
-            const SizedBox(height: 10),
+            Icon(
+              _isConnected ? Icons.check_circle : Icons.error,
+              color: _isConnected ? Colors.green : Colors.red,
+            ),
+            const SizedBox(width: 10),
             Text(
-              'Estado: ${_isConnected ? 'CONECTADO' : 'DESCONECTADO'}',
+              _isConnected ? 'Conectado a Clover' : 'Desconectado',
               style: TextStyle(
-                fontSize: 18,
                 fontWeight: FontWeight.bold,
                 color: _isConnected ? Colors.green : Colors.red,
               ),
             ),
-            const SizedBox(height: 5),
-            Text(
-              _isConnected
-                  ? 'Listo para procesar pagos'
-                  : 'Conecta el dispositivo Clover',
-              style: const TextStyle(color: Colors.grey),
+            const Spacer(),
+            if (!_isConnected)
+              ElevatedButton(
+                onPressed: _isLoading ? null : _initializeClover,
+                child: const Text('Conectar'),
+              )
+            else
+              ElevatedButton(
+                onPressed: _isLoading ? null : _disconnectClover,
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                child: const Text('Desconectar'),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInventorySection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Inventario',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 200,
+              child: _inventoryItems.isEmpty
+                  ? const Center(child: Text('No hay productos disponibles'))
+                  : ListView.builder(
+                      itemCount: _inventoryItems.length,
+                      itemBuilder: (context, index) {
+                        final item = _inventoryItems[index];
+                        return ListTile(
+                          title: Text(item['name'] ?? 'Sin nombre'),
+                          subtitle: Text(
+                              '\$${(item['price'] / 100).toStringAsFixed(2)}'),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => _selectItem(item['id']),
+                        );
+                      },
+                    ),
             ),
           ],
         ),
@@ -95,19 +271,18 @@ class _CloverTestPageState extends State<CloverTestPage> {
     );
   }
 
-  Widget _buildPaymentForm() {
+  Widget _buildPaymentSection() {
     return Card(
-      elevation: 4,
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Simular Pago',
+              'Procesar Pago',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
             TextField(
               controller: _amountController,
               decoration: const InputDecoration(
@@ -118,9 +293,21 @@ class _CloverTestPageState extends State<CloverTestPage> {
               keyboardType: TextInputType.number,
             ),
             const SizedBox(height: 10),
-            const Text(
-              'Ejemplo: 1000 = \$10.00',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
+            if (_selectedItem != null)
+              Text(
+                'Producto: ${_selectedItem!['name']} - \$${(_selectedItem!['price'] / 100).toStringAsFixed(2)}',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _isConnected && !_isLoading ? _processPayment : null,
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+                child: const Text('Procesar Pago'),
+              ),
             ),
           ],
         ),
@@ -128,134 +315,23 @@ class _CloverTestPageState extends State<CloverTestPage> {
     );
   }
 
-  Widget _buildActionButtons() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [
-        ElevatedButton.icon(
-          icon: const Icon(Icons.link),
-          label: const Text('Conectar'),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.green,
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-          ),
-          onPressed: _isConnected ? null : _initializeClover,
-        ),
-        ElevatedButton.icon(
-          icon: const Icon(Icons.payment),
-          label: const Text('Pagar'),
-          style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-          ),
-          onPressed: _isConnected && !_isProcessing ? _makePayment : null,
-        ),
-        ElevatedButton.icon(
-          icon: const Icon(Icons.link_off),
-          label: const Text('Desconectar'),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.red,
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-          ),
-          onPressed: _isConnected ? _disconnectClover : null,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLogOutput() {
-    return Card(
-      elevation: 4,
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Registro de Actividad',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const Divider(),
-            const SizedBox(height: 10),
-            Text(
-              _paymentStatus.isEmpty
-                  ? 'No hay actividad reciente...'
-                  : _paymentStatus,
+  Widget _buildStatusBar() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      color: Colors.grey[200],
+      child: Row(
+        children: [
+          if (_isLoading) const CircularProgressIndicator(),
+          if (_isLoading) const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              _statusMessage,
               style: const TextStyle(fontFamily: 'monospace'),
+              overflow: TextOverflow.ellipsis,
             ),
-            if (_isProcessing) const LinearProgressIndicator(),
-          ],
-        ),
+          ),
+        ],
       ),
     );
-  }
-
-  Future<void> _initializeClover() async {
-    setState(() {
-      _isProcessing = true;
-      _paymentStatus = 'Inicializando conexión con Clover...';
-    });
-
-    try {
-      final success = await CloverService.initialize();
-
-      setState(() {
-        _isConnected = success;
-        _paymentStatus = success
-            ? '✅ Dispositivo Clover conectado correctamente'
-            : '❌ Error al conectar con Clover';
-      });
-    } catch (e) {
-      setState(() {
-        _paymentStatus = '❌ Error: ${e.toString()}';
-      });
-    } finally {
-      setState(() => _isProcessing = false);
-    }
-  }
-
-  Future<void> _makePayment() async {
-    final amount = int.tryParse(_amountController.text) ?? 0;
-    if (amount <= 0) {
-      setState(() => _paymentStatus = '⚠️ Ingrese un monto válido');
-      return;
-    }
-
-    setState(() {
-      _isProcessing = true;
-      _paymentStatus =
-          'Procesando pago por \$${(amount / 100).toStringAsFixed(2)}...';
-    });
-
-    try {
-      final result = await CloverService.makePayment(amount);
-      setState(() => _paymentStatus = result);
-    } catch (e) {
-      setState(() => _paymentStatus = '❌ Error en el pago: ${e.toString()}');
-    } finally {
-      setState(() => _isProcessing = false);
-    }
-  }
-
-  Future<void> _disconnectClover() async {
-    setState(() {
-      _isProcessing = true;
-      _paymentStatus = 'Desconectando dispositivo Clover...';
-    });
-
-    try {
-      final success = await CloverService.disconnect();
-      setState(() {
-        _isConnected = !success;
-        _paymentStatus = success
-            ? '✅ Dispositivo Clover desconectado correctamente'
-            : '❌ Error al desconectar Clover';
-      });
-    } catch (e) {
-      setState(() {
-        _paymentStatus = '❌ Error: ${e.toString()}';
-      });
-    } finally {
-      setState(() => _isProcessing = false);
-    }
   }
 }

@@ -29,4 +29,25 @@ class CloverService {
       return false;
     }
   }
+
+  static Future<List<dynamic>> getInventoryItems() async {
+    try {
+      final items = await _channel.invokeMethod('getInventoryItems');
+      return items as List<dynamic>;
+    } catch (e) {
+      print('Error getting inventory items: $e');
+      return [];
+    }
+  }
+
+  static Future<Map<String, dynamic>?> getItemDetails(String itemId) async {
+    try {
+      final item =
+          await _channel.invokeMethod('getItemDetails', {'itemId': itemId});
+      return item as Map<String, dynamic>?;
+    } catch (e) {
+      print('Error getting item details: $e');
+      return null;
+    }
+  }
 }

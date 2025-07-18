@@ -4,20 +4,13 @@ import android.widget.Toast
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
-import android.accounts.Account;
-import android.os.AsyncTask;
-import android.os.RemoteException;
-import android.os.Bundle;
-import android.widget.TextView;
+import android.accounts.Account
 import android.util.Log
 
-import com.clover.sdk.util.CloverAccount;
-import com.clover.sdk.v1.BindingException;
-import com.clover.sdk.v1.ClientException;
-import com.clover.sdk.v1.ServiceException;
-import com.clover.sdk.v3.inventory.InventoryConnector;
-import com.clover.sdk.v3.inventory.Item;
-import com.clover.sdk.v3.inventory.InventoryContract;
+import com.clover.sdk.util.CloverAccount
+import com.clover.sdk.v3.inventory.InventoryConnector
+import com.clover.sdk.v3.inventory.InventoryContract
+import java.util.ArrayList
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.tuapp.clover"
@@ -56,6 +49,12 @@ class MainActivity : FlutterActivity() {
                 "disconnect" -> {
                     Log.i(TAG, "Desconectando de Clover")
                     disconnect(result)
+                }
+                "getInventoryItems" -> getInventoryItems(result)
+                "getItemDetails" -> {
+                    val itemId = call.argument<String>("itemId")
+                    if (itemId != null) getItemDetails(itemId, result)
+                    else result.error("INVALID_ARGUMENT", "Item ID is missing", null)
                 }
                 else -> {
                     Log.w(TAG, "Método no implementado: ${call.method}")
@@ -130,4 +129,83 @@ class MainActivity : FlutterActivity() {
             }
         }.start()
     }
+
+    private fun getInventoryItems(result: MethodChannel.Result) {
+        Thread {
+            try {
+                if (!isInitialized) {
+                    result.error("NOT_INITIALIZED", "Clover not initialized", null)
+                    return@Thread
+                }
+
+                val items = ArrayList<Map<String, Any?>>()
+                val uri = InventoryContract.Item.CONTENT_URI
+                val projection = arrayOf(
+                    InventoryContract.Item.ID,
+                    InventoryContract.Item.NAME,
+                    InventoryContract.Item.PRICE,
+                    InventoryContract.Item.CODE
+                )
+
+                val cursor = contentResolver.query(
+                    uri,
+                    projection,
+                    null,  // selection
+                    null,  // selectionArgs
+                    "${InventoryContract.Item.NAME} ASC"  // ordenar por nombre
+                )
+
+                cursor?.use {
+                    while (it.moveToNext()) {
+                        val idIndex = it.getColumnIndex(InventoryContract.Item.ID)
+                        val nameIndex = it.getColumnIndex(InventoryContract.Item.NAME)
+                        val priceIndex = it.getColumnIndex(InventoryContract.Item.PRICE)
+                        val codeIndex = it.getColumnIndex(InventoryContract.Item.CODE)
+
+                        items.add(hashMapOf(
+                            "id" to it.getString(idIndex),
+                            "name" to it.getString(nameIndex),
+                            "price" to it.getLong(priceIndex),
+                            "code" to it.getString(codeIndex)
+                        ))
+                    }
+                }
+
+                result.success(items)
+            } catch (e: Exception) {
+                result.error("INVENTORY_ERROR", "Error al obtener inventario: ${e.message}", null)
+            }
+        }.start()
+    }
+
+    private fun getItemDetails(itemId: String, result: MethodChannel.Result) {
+        Thread {
+            try {
+                if (!isInitialized) {
+                    result.error("NOT_INITIALIZED", "Clover not initialized", null)
+                    return@Thread
+                }
+
+                val item = mInventoryConnector?.getItem(itemId)
+                if (item != null) {
+                    result.success(hashMapOf(
+                        "id" to item.id,
+                        "name" to item.name,
+                        "price" to item.price,
+                        "code" to item.code,
+                        "alternateName" to item.alternateName
+                    ))
+                } else {
+                    result.error("ITEM_NOT_FOUND", "Item not found", null)
+                }
+            } catch (e: Exception) {
+                result.error("ITEM_ERROR", e.message, null)
+            }
+        }.start()
+    }
+
+    // override fun onDestroy() {
+    //     mInventoryConnector?.disconnect()
+    //     super.onDestroy()
+    // }
 }
