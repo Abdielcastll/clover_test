@@ -1,4 +1,4 @@
-package com.example.clover_test
+package com.sandbox.clover_test
 
 import android.widget.Toast
 import io.flutter.embedding.android.FlutterActivity

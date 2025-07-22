@@ -1,5 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.example.clover_test">
+    package="com.sandbox.clover_test">
+
+     <uses-sdk android:minSdkVersion="19" android:targetSdkVersion="29" />
 
     <uses-permission android:name="android.permission.GET_ACCOUNTS" />
     <uses-permission android:name="android.permission.USE_CREDENTIALS" />
@@ -8,8 +10,10 @@
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <uses-permission android:name="com.clover.permission.CLOVER_SERVICE" />
-    <uses-permission android:name="com.clover.permission.MERCHANT"/>
+    <uses-permission android:name="com.clover.permission.MERCHANT_R"/>
     <uses-permission android:name="com.clover.permission.INVENTORY_R"/>
+    <uses-permission android:name="com.clover.permission.INVENTORY_W"/>
+    <uses-permission android:name="com.clover.permission.EMPLOYEES_R"/>
 
     <!-- For AppInstallDoneService -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
